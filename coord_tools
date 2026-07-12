@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>أدوات تحويل الإحداثيات المكانية - قسم الـ GIS</title>
+    
+    <!-- استدعاء مكتبات التحويل والخرائط -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #f4f4f2;
+            --primary-color: #2c3e50;
+            --accent-blue: #3498db;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { color: #111; margin-bottom: 20px; text-align: center; font-size: 24px; }
+
+        select, button { 
+            padding: 8px 15px; border-radius: 5px; border: 1px solid #ccc; 
+            font-family: inherit; font-size: 14px; font-weight: bold; cursor: pointer; 
+            transition: 0.3s;
+        }
+
+        button:hover { opacity: 0.9; }
+
+        input[type="number"] { 
+            padding: 6px 8px; border-radius: 5px; border: 1px solid #ccc; 
+            text-align: center; font-size: 15px; font-weight: bold; 
+        }
+        input[type="number"]:focus { outline: none; border-color: var(--accent-blue); background-color: #e8f4f8; }
+
+        .btn-draw { background-color: #27ae60; color: white; border: none; }
+        .btn-clear { background-color: #e74c3c; color: white; border: none; }
+        .btn-excel { background-color: #217346; color: white; border: none; }
+
+        .coords-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 15px; }
+        .coords-actions button { flex: 1; min-width: 240px; padding: 12px; font-size: 16px; }
+
+        /* تنسيقات البطاقة الرئيسية */
+        .coords-card { 
+            background: white; padding: 25px; border-radius: 12px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 800px; 
+            text-align: left; direction: ltr; margin-bottom: 20px;
+        }
+
+        .coords-fieldset { border: 1px solid #bdc3c7; border-radius: 8px; padding: 15px 20px; margin-bottom: 20px; background: #fafafa; }
+        .coords-fieldset legend { font-weight: bold; color: var(--primary-color); background: white; padding: 0 10px; border: 1px solid #bdc3c7; border-radius: 4px; font-size: 15px;}
+        .coords-row { display: flex; gap: 15px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+        .coords-label { font-weight: bold; color: #333; width: 110px; display: inline-block;}
+        .coords-input-group { display: flex; align-items: center; gap: 8px; }
+        
+        .coord-input-lg { width: 140px !important; }
+        .coord-input-md { width: 80px !important; }
+        .coord-input-sm { width: 60px !important; }
+
+        /* تنسيقات الخريطة */
+        #coord-map { width: 100%; height: 420px; border: 2px solid #bdc3c7; border-radius: 10px; margin-top: 12px; direction: ltr; z-index: 1; }
+        .map-note { margin-top: 10px; padding: 10px; background: #eef7ff; border: 1px solid #c8e4ff; border-radius: 8px; color: #2c3e50; font-weight: bold; text-align: center; direction: ltr; }
+
+        .designer-signature { text-align: center; direction: ltr; font-size: 13px; color: #555; margin-top: 12px; padding-top: 10px; width: 100%; max-width: 800px; border-top: 1px solid #eaeaea; }
+        .designer-signature strong { font-weight: 800; color: #333; }
+        .designer-signature span { color: var(--accent-blue); }
+    </style>
+</head>
+<body>
+
+    <div id="coords-section" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+        <h1>أدوات تحويل الإحداثيات المكانية (Datum: WGS 84)</h1>
+        
+        <div class="coords-card">
+            
+            <!-- الدرجات العشرية -->
+            <fieldset class="coords-fieldset">
+                <legend>Decimal Degrees (الدرجات العشرية)</legend>
+                <div class="coords-row">
+                    <div class="coords-input-group">
+                        <span class="coords-label">Latitude (Y):</span>
+                        <input type="number" id="dd-lat" class="coord-input-lg" step="any">
+                    </div>
+                    <div class="coords-input-group" style="margin-left: 20px;">
+                        <span class="coords-label">Longitude (X):</span>
+                        <input type="number" id="dd-lng" class="coord-input-lg" step="any">
+                    </div>
+                </div>
+                <button class="btn-draw" onclick="convertFromDD()">Convert from Decimal Degrees</button>
+            </fieldset>
+
+            <!-- الدرجات، الدقائق، الثواني -->
+            <fieldset class="coords-fieldset">
+                <legend>Degrees, Minutes, Seconds (DMS)</legend>
+                <div class="coords-row">
+                    <span class="coords-label">Latitude:</span>
+                    <div class="coords-input-group">
+                        <input type="number" id="dms-lat-d" class="coord-input-md">°
+                        <input type="number" id="dms-lat-m" class="coord-input-md">'
+                        <input type="number" id="dms-lat-s" class="coord-input-md" step="any">"
+                        <select id="dms-lat-dir" style="margin-left: 5px;"><option value="N">N (+)</option><option value="S">S (-)</option></select>
+                    </div>
+                </div>
+                <div class="coords-row">
+                    <span class="coords-label">Longitude:</span>
+                    <div class="coords-input-group">
+                        <input type="number" id="dms-lng-d" class="coord-input-md">°
+                        <input type="number" id="dms-lng-m" class="coord-input-md">'
+                        <input type="number" id="dms-lng-s" class="coord-input-md" step="any">"
+                        <select id="dms-lng-dir" style="margin-left: 5px;"><option value="E">E (+)</option><option value="W">W (-)</option></select>
+                    </div>
+                </div>
+                <button class="btn-draw" onclick="convertFromDMS()">Convert from DMS</button>
+            </fieldset>
+
+            <!-- UTM -->
+            <fieldset class="coords-fieldset">
+                <legend>Standard UTM (Universal Transverse Mercator)</legend>
+                <div class="coords-row">
+                    <div class="coords-input-group">
+                        <span class="coords-label" style="width: auto; margin-right: 5px;">Zone:</span>
+                        <input type="number" id="utm-zone" class="coord-input-sm">
+                    </div>
+                    <div class="coords-input-group" style="margin-left: 15px;">
+                        <span class="coords-label" style="width: auto; margin-right: 5px;">Hemisphere:</span>
+                        <select id="utm-hemi"><option value="N">N (North)</option><option value="S">S (South)</option></select>
+                    </div>
+                </div>
+                <div class="coords-row">
+                    <div class="coords-input-group">
+                        <span class="coords-label">Easting (X):</span>
+                        <input type="number" id="utm-easting" class="coord-input-lg" step="any">
+                    </div>
+                    <div class="coords-input-group" style="margin-left: 20px;">
+                        <span class="coords-label">Northing (Y):</span>
+                        <input type="number" id="utm-northing" class="coord-input-lg" step="any">
+                    </div>
+                </div>
+                <button class="btn-draw" onclick="convertFromUTM()">Convert from Standard UTM</button>
+            </fieldset>
+
+            <!-- الإجراءات -->
+            <div class="coords-actions">
+                <button class="btn-excel" onclick="exportCoordsToExcel()">تصدير الإحداثيات إلى Excel 📊</button>
+                <button class="btn-clear" onclick="clearCoordsForm()">تفريغ جميع الحقول 🗑️</button>
+            </div>
+
+            <!-- عرض الخريطة -->
+            <fieldset class="coords-fieldset" style="margin-top: 20px;">
+                <legend>Map Preview - موقع الإحداثي المدخل</legend>
+                <div id="coord-map"></div>
+                <div id="map-coord-info" class="map-note">أدخل الإحداثيات واضغط Convert لعرض الموقع على الخريطة.</div>
+            </fieldset>
+        </div>
+        
+        <div class="designer-signature">
+            <strong>Designed By:</strong> Eng. Mustafa Ismael | <span>Head of GIS Section</span>
+        </div>
+    </div>
+
+    <!-- السكربتات البرمجية -->
+    <script>
+        let coordMap = null;
+        let coordMarker = null;
+
+        // تهيئة الخريطة فور تحميل الصفحة
+        document.addEventListener("DOMContentLoaded", () => {
+            initCoordMap();
+        });
+
+        function initCoordMap() {
+            if (coordMap) return;
+            coordMap = L.map('coord-map').setView([33.3128, 44.3614], 6); // مركز مبدئي (العراق)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(coordMap);
+        }
+
+        function updateCoordMap(lat, lng) {
+            if (isNaN(lat) || isNaN(lng)) return;
+            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                alert("الإحداثيات خارج النطاق الصحيح: Latitude بين -90 و 90، و Longitude بين -180 و 180.");
+                return;
+            }
+
+            if (coordMarker) {
+                coordMap.removeLayer(coordMarker);
+            }
+
+            coordMarker = L.marker([lat, lng]).addTo(coordMap)
+                .bindPopup(`Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}`)
+                .openPopup();
+
+            coordMap.setView([lat, lng], 15);
+            document.getElementById('map-coord-info').innerHTML = `Latitude: ${lat.toFixed(6)}   |   Longitude: ${lng.toFixed(6)}`;
+        }
+
+        function clearCoordMap() {
+            if (!coordMap) return;
+            if (coordMarker) {
+                coordMap.removeLayer(coordMarker);
+                coordMarker = null;
+            }
+            coordMap.setView([33.3128, 44.3614], 6);
+            document.getElementById('map-coord-info').innerHTML = 'أدخل الإحداثيات واضغط Convert لعرض الموقع على الخريطة.';
+        }
+
+        function toDMS(deg, isLat) {
+            let dir = deg >= 0 ? (isLat ? 'N' : 'E') : (isLat ? 'S' : 'W');
+            let absDeg = Math.abs(deg);
+            let d = Math.floor(absDeg);
+            let minFloat = (absDeg - d) * 60;
+            let m = Math.floor(minFloat);
+            let s = (minFloat - m) * 60;
+            return { d, m, s, dir };
+        }
+
+        function updateDMSFields(lat, lng) {
+            let latDms = toDMS(lat, true);
+            let lngDms = toDMS(lng, false);
+            
+            document.getElementById('dms-lat-d').value = latDms.d;
+            document.getElementById('dms-lat-m').value = latDms.m;
+            document.getElementById('dms-lat-s').value = latDms.s.toFixed(3);
+            document.getElementById('dms-lat-dir').value = latDms.dir;
+            
+            document.getElementById('dms-lng-d').value = lngDms.d;
+            document.getElementById('dms-lng-m').value = lngDms.m;
+            document.getElementById('dms-lng-s').value = lngDms.s.toFixed(3);
+            document.getElementById('dms-lng-dir').value = lngDms.dir;
+        }
+
+        function convertFromDD() {
+            let lat = parseFloat(document.getElementById('dd-lat').value);
+            let lng = parseFloat(document.getElementById('dd-lng').value);
+            
+            if(isNaN(lat) || isNaN(lng)) { alert("يرجى إدخال قيم صحيحة للدرجات العشرية."); return; }
+            
+            updateDMSFields(lat, lng);
+            
+            let zone = Math.floor((lng + 180) / 6) + 1;
+            let hemi = lat >= 0 ? 'N' : 'S';
+            let utmProj = `+proj=utm +zone=${zone} ${hemi==='S'?'+south':''} +datum=WGS84 +units=m +no_defs`;
+            
+            let utmCoords = proj4('EPSG:4326', utmProj, [lng, lat]);
+            
+            document.getElementById('utm-zone').value = zone;
+            document.getElementById('utm-hemi').value = hemi;
+            document.getElementById('utm-easting').value = utmCoords[0].toFixed(3);
+            document.getElementById('utm-northing').value = utmCoords[1].toFixed(3);
+
+            updateCoordMap(lat, lng);
+        }
+
+        function convertFromDMS() {
+            let latD = parseInt(document.getElementById('dms-lat-d').value) || 0;
+            let latM = parseInt(document.getElementById('dms-lat-m').value) || 0;
+            let latS = parseFloat(document.getElementById('dms-lat-s').value) || 0;
+            let latDir = document.getElementById('dms-lat-dir').value;
+            
+            let lngD = parseInt(document.getElementById('dms-lng-d').value) || 0;
+            let lngM = parseInt(document.getElementById('dms-lng-m').value) || 0;
+            let lngS = parseFloat(document.getElementById('dms-lng-s').value) || 0;
+            let lngDir = document.getElementById('dms-lng-dir').value;
+            
+            let lat = latD + (latM/60) + (latS/3600);
+            if(latDir === 'S') lat = -lat;
+            
+            let lng = lngD + (lngM/60) + (lngS/3600);
+            if(lngDir === 'W') lng = -lng;
+            
+            document.getElementById('dd-lat').value = lat.toFixed(6);
+            document.getElementById('dd-lng').value = lng.toFixed(6);
+            
+            convertFromDD();
+        }
+
+        function convertFromUTM() {
+            let zone = parseInt(document.getElementById('utm-zone').value);
+            let hemi = document.getElementById('utm-hemi').value;
+            let easting = parseFloat(document.getElementById('utm-easting').value);
+            let northing = parseFloat(document.getElementById('utm-northing').value);
+            
+            if(isNaN(zone) || isNaN(easting) || isNaN(northing)) { alert("يرجى إدخال قيم صحيحة للـ UTM."); return; }
+            
+            let utmProj = `+proj=utm +zone=${zone} ${hemi==='S'?'+south':''} +datum=WGS84 +units=m +no_defs`;
+            let wgsCoords = proj4(utmProj, 'EPSG:4326', [easting, northing]);
+            
+            let lng = wgsCoords[0];
+            let lat = wgsCoords[1];
+            
+            document.getElementById('dd-lng').value = lng.toFixed(6);
+            document.getElementById('dd-lat').value = lat.toFixed(6);
+            
+            updateDMSFields(lat, lng);
+            updateCoordMap(lat, lng);
+        }
+
+        function clearCoordsForm() {
+            const inputs = document.querySelectorAll('#coords-section input[type="number"]');
+            inputs.forEach(input => input.value = '');
+            clearCoordMap();
+        }
+
+        function getCoordFieldValue(id) {
+            const el = document.getElementById(id);
+            return el ? String(el.value || '').trim() : '';
+        }
+        function hasCoordValue(id) { return getCoordFieldValue(id) !== ''; }
+        function excelEscape(value) { return String(value ?? '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"'); }
+
+        function autoCompleteCoordsForExport() {
+            const ddLat = parseFloat(getCoordFieldValue('dd-lat'));
+            const ddLng = parseFloat(getCoordFieldValue('dd-lng'));
+            if (!isNaN(ddLat) && !isNaN(ddLng)) { convertFromDD(); return true; }
+
+            const zone = parseInt(getCoordFieldValue('utm-zone'));
+            const east = parseFloat(getCoordFieldValue('utm-easting'));
+            const north = parseFloat(getCoordFieldValue('utm-northing'));
+            if (!isNaN(zone) && !isNaN(east) && !isNaN(north)) { convertFromUTM(); return true; }
+
+            const dmsIds = ['dms-lat-d','dms-lat-m','dms-lat-s','dms-lng-d','dms-lng-m','dms-lng-s'];
+            if (dmsIds.every(hasCoordValue)) { convertFromDMS(); return true; }
+            return false;
+        }
+
+        function exportCoordsToExcel() {
+            const allInputIds = [
+                'dd-lat', 'dd-lng', 'dms-lat-d', 'dms-lat-m', 'dms-lat-s', 'dms-lng-d', 'dms-lng-m', 'dms-lng-s',
+                'utm-zone', 'utm-easting', 'utm-northing'
+            ];
+
+            if (!allInputIds.some(hasCoordValue)) {
+                alert('لا توجد إحداثيات للتصدير. يرجى إدخال الإحداثيات أولاً.');
+                return;
+            }
+
+            autoCompleteCoordsForExport();
+
+            const ddLat = getCoordFieldValue('dd-lat');
+            const ddLng = getCoordFieldValue('dd-lng');
+            const osmLink = (ddLat && ddLng) ? `https://www.openstreetmap.org/?mlat=${ddLat}&mlon=${ddLng}#map=18/${ddLat}/${ddLng}` : '';
+            const googleLink = (ddLat && ddLng) ? `https://www.google.com/maps?q=${ddLat},${ddLng}` : '';
+
+            const rows = [
+                ['Datum', 'WGS 84', '', ''],
+                ['Export Date', new Date().toLocaleString(), '', ''],
+                ['', '', '', ''],
+                ['Coordinate System', 'Field', 'Value', 'Unit / Direction'],
+                ['Decimal Degrees', 'Latitude (Y)', ddLat, 'degree'],
+                ['Decimal Degrees', 'Longitude (X)', ddLng, 'degree'],
+                ['', '', '', ''],
+                ['DMS Latitude', 'Degrees', getCoordFieldValue('dms-lat-d'), '°'],
+                ['DMS Latitude', 'Minutes', getCoordFieldValue('dms-lat-m'), "'"],
+                ['DMS Latitude', 'Seconds', getCoordFieldValue('dms-lat-s'), '"'],
+                ['DMS Latitude', 'Direction', getCoordFieldValue('dms-lat-dir'), 'N/S'],
+                ['DMS Longitude', 'Degrees', getCoordFieldValue('dms-lng-d'), '°'],
+                ['DMS Longitude', 'Minutes', getCoordFieldValue('dms-lng-m'), "'"],
+                ['DMS Longitude', 'Seconds', getCoordFieldValue('dms-lng-s'), '"'],
+                ['DMS Longitude', 'Direction', getCoordFieldValue('dms-lng-dir'), 'E/W'],
+                ['', '', '', ''],
+                ['Standard UTM', 'Zone', getCoordFieldValue('utm-zone'), ''],
+                ['Standard UTM', 'Hemisphere', getCoordFieldValue('utm-hemi'), 'N/S'],
+                ['Standard UTM', 'Easting (X)', getCoordFieldValue('utm-easting'), 'meter'],
+                ['Standard UTM', 'Northing (Y)', getCoordFieldValue('utm-northing'), 'meter'],
+                ['', '', '', ''],
+                ['Map Link', 'OpenStreetMap', osmLink, ''],
+                ['Map Link', 'Google Maps', googleLink, '']
+            ];
+
+            const tableRows = rows.map((row, rowIndex) => {
+                const cells = row.map(cell => `<td>${excelEscape(cell)}</td>`).join('');
+                return `<tr${rowIndex === 3 ? ' style="font-weight:bold; background:#d9ead3;"' : ''}>${cells}</tr>`;
+            }).join('');
+
+            const excelHtml = `
+                <html xmlns:o="urn:schemas-microsoft-com:office:office"
+                      xmlns:x="urn:schemas-microsoft-com:office:excel"
+                      xmlns="http://www.w3.org/TR/REC-html40">
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: Arial, sans-serif; }
+                        table { border-collapse: collapse; }
+                        td { border: 1px solid #999; padding: 8px; mso-number-format:"\\@"; }
+                        .title { font-size: 18px; font-weight: bold; background: #217346; color: white; text-align: center; }
+                    </style>
+                </head>
+                <body>
+                    <table>
+                        <tr><td class="title" colspan="4">GIS Coordinates Export</td></tr>
+                        ${tableRows}
+                    </table>
+                </body>
+                </html>`;
+
+            const blob = new Blob(['\ufeff' + excelHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            link.href = url;
+            link.download = `GIS_Coordinates_${ts}.xls`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
